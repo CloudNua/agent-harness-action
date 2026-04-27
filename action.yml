@@ -1,0 +1,49 @@
+name: "CloudNua Agent Harness"
+description: "Wrap AI coding agents with pre/post policy scanning and governance guardrails"
+author: "CloudNua"
+
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  api-token:
+    description: "CloudNua API token for policy fetching"
+    required: true
+  api-url:
+    description: "CloudNua API base URL"
+    required: false
+    default: "https://app.cloudnua.com"
+  agent-command:
+    description: "The agent command to execute (e.g., 'copilot-cli suggest')"
+    required: true
+  policy-types:
+    description: "Comma-separated policy types to enforce: dependency, mcp, compliance. Currently advisory — policy filtering is performed server-side."
+    required: false
+    default: "all"
+  firewall-url:
+    description: >
+      URL of the CloudNua MCP firewall gateway. When set, the harness
+      exposes CLOUDNUA_FIREWALL_URL in the agent subprocess environment.
+      Agent developers must configure their agent to connect to this
+      URL as the MCP server endpoint (HTTP/SSE transport only).
+      The harness does not modify agent config files.
+    required: false
+  allow-http:
+    description: "Allow non-TLS URLs for api-url and firewall-url. Intended for local development and testing only — do not enable in production."
+    required: false
+    default: "false"
+  fail-on-violation:
+    description: "Fail the action if blocking violations are found"
+    required: false
+    default: "true"
+  github-token:
+    description: "GitHub token for creating Check Runs (needs checks:write permission)"
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: "node20"
+  pre: "dist/pre/index.js"
+  main: "dist/main/index.js"
+  post: "dist/post/index.js"

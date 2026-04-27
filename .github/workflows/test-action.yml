@@ -1,0 +1,213 @@
+name: Test Action (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-mode:
+        description: "Test mode: 'add-dep' adds lodash to trigger violations, 'no-change' runs without modifications"
+        required: false
+        default: "add-dep"
+        type: choice
+        options:
+          - add-dep
+          - no-change
+
+jobs:
+  test-action:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+    env:
+      TEST_MODE: ${{ inputs.test-mode }}
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start mock policy API
+        run: |
+          mkdir -p /tmp/mock-api
+
+          openssl req -x509 -newkey rsa:2048 -keyout /tmp/mock-api/key.pem \
+            -out /tmp/mock-api/cert.pem -days 1 -nodes \
+            -subj "/CN=localhost" 2>/dev/null
+
+          cat > /tmp/mock-api/server.mjs << 'SERVEREOF'
+          import https from "node:https";
+          import fs from "node:fs";
+
+          const policies = {
+            policies: [
+              {
+                id: "test-block-lodash",
+                name: "Block lodash",
+                description: "Test policy that blocks lodash",
+                type: "dependency",
+                action: "block",
+                conditions: { blockedPackages: ["lodash"] },
+                enabled: true
+              },
+              {
+                id: "test-warn-mcp",
+                name: "Warn MCP servers",
+                description: "Test policy for MCP",
+                type: "mcp",
+                action: "warn",
+                conditions: { mcpPatterns: ["mcp-server"] },
+                enabled: true
+              },
+              {
+                id: "test-max-deps",
+                name: "Max 50 dependencies",
+                description: "Compliance limit",
+                type: "compliance",
+                action: "warn",
+                conditions: { maxDependencies: 50 },
+                enabled: true
+              }
+            ]
+          };
+
+          const server = https.createServer(
+            {
+              key: fs.readFileSync("/tmp/mock-api/key.pem"),
+              cert: fs.readFileSync("/tmp/mock-api/cert.pem"),
+            },
+            (req, res) => {
+              console.log(`${req.method} ${req.url}`);
+              const auth = req.headers.authorization;
+              if (!auth || !auth.startsWith("Bearer cn_live_")) {
+                res.writeHead(401, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Unauthorized" }));
+                return;
+              }
+              if (req.url === "/api/policies/export") {
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify(policies));
+              } else {
+                res.writeHead(404);
+                res.end("Not found");
+              }
+            }
+          );
+
+          server.listen(9443, () => {
+            console.log("Mock API listening on https://localhost:9443");
+            fs.writeFileSync("/tmp/mock-api/ready", "ok");
+          });
+          SERVEREOF
+
+          node /tmp/mock-api/server.mjs &
+          echo $! > /tmp/mock-api/pid
+
+          for i in $(seq 1 10); do
+            [ -f /tmp/mock-api/ready ] && break
+            sleep 0.5
+          done
+          echo "Mock API server started (PID: $(cat /tmp/mock-api/pid))"
+
+      - name: Create test manifest
+        run: echo '{"dependencies":{"react":"^19.0.0"}}' > package.json
+
+      # Run all three steps via a Node.js runner that bridges state between them.
+      # core.saveState() writes to $GITHUB_STATE file; core.getState() reads STATE_* env vars.
+      # Bash cannot export vars with hyphens (e.g. STATE_workspace-snapshot-path),
+      # but Node.js process.env supports any string key, so we use a JS bridge.
+      - name: "Run action: pre → main → post"
+        run: |
+          cat > /tmp/run-steps.mjs << 'RUNEOF'
+          import { readFileSync, existsSync } from "node:fs";
+          import { execFileSync } from "node:child_process";
+
+          function loadState() {
+            const stateFile = process.env.GITHUB_STATE;
+            if (!stateFile || !existsSync(stateFile)) return;
+            const lines = readFileSync(stateFile, "utf8").split("\n");
+            let i = 0;
+            while (i < lines.length) {
+              const multi = lines[i].match(/^([^=]+)<<(.+)$/);
+              if (multi) {
+                const [, name, delim] = multi;
+                let val = "";
+                i++;
+                while (i < lines.length && lines[i] !== delim) {
+                  val += (val ? "\n" : "") + lines[i];
+                  i++;
+                }
+                process.env[`STATE_${name}`] = val;
+                i++;
+              } else {
+                const simple = lines[i].match(/^([^=]+)=(.*)$/);
+                if (simple) {
+                  process.env[`STATE_${simple[1]}`] = simple[2];
+                }
+                i++;
+              }
+            }
+            const stateVars = Object.keys(process.env).filter(k => k.startsWith("STATE_"));
+            console.log(`State vars loaded: ${stateVars.join(", ")}`);
+          }
+
+          function run(label, script) {
+            console.log(`\n=== ${label} ===`);
+            execFileSync("node", [script], { env: process.env, stdio: "inherit" });
+          }
+
+          run("PRE STEP", "dist/pre/index.js");
+
+          console.log("\n--- Loading state from pre step ---");
+          loadState();
+
+          run("MAIN STEP", "dist/main/index.js");
+
+          console.log("\n--- Loading state from main step ---");
+          loadState();
+
+          run("POST STEP", "dist/post/index.js");
+          RUNEOF
+
+          node /tmp/run-steps.mjs
+        env:
+          INPUT_API-TOKEN: cn_live_test_mock_token_for_ci
+          INPUT_API-URL: https://localhost:9443
+          INPUT_POLICY-TYPES: all
+          INPUT_AGENT-COMMAND: "if [ \"$TEST_MODE\" = \"add-dep\" ]; then echo '{\"dependencies\":{\"react\":\"^19.0.0\",\"lodash\":\"^4.17.21\"}}' > package.json; else echo 'No changes'; fi"
+          INPUT_FAIL-ON-VIOLATION: "false"
+          INPUT_GITHUB-TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify telemetry artifact
+        if: always()
+        run: |
+          echo "=== Telemetry ==="
+          if [ -f .cloudnua/scan-result.json ]; then
+            cat .cloudnua/scan-result.json
+            echo ""
+            echo "✅ Telemetry file written"
+
+            VIOLATIONS=$(jq '.scan.totalViolations' .cloudnua/scan-result.json)
+            echo "Total violations: $VIOLATIONS"
+
+            if [ "$TEST_MODE" = "add-dep" ] && [ "$VIOLATIONS" -gt 0 ]; then
+              echo "✅ Violations detected as expected"
+            elif [ "$TEST_MODE" = "no-change" ] && [ "$VIOLATIONS" -eq 0 ]; then
+              echo "✅ No violations as expected"
+            else
+              echo "⚠️ Unexpected violation count for test mode: $TEST_MODE"
+            fi
+          else
+            echo "❌ No telemetry file found"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloudnua-scan-result
+          path: .cloudnua/scan-result.json
+          if-no-files-found: ignore
+
+      - name: Stop mock server
+        if: always()
+        run: |
+          [ -f /tmp/mock-api/pid ] && kill "$(cat /tmp/mock-api/pid)" 2>/dev/null || true

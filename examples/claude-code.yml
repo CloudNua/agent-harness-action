@@ -1,0 +1,33 @@
+name: Claude Code with CloudNua Scanning
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Prompt for Claude Code"
+        required: true
+        type: string
+
+jobs:
+  agent-run:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cloudnua/agent-harness-action@v1
+        with:
+          api-token: ${{ secrets.CLOUDNUA_API_TOKEN }}
+          agent-command: "claude -p \"$AGENT_PROMPT\""
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENT_PROMPT: ${{ inputs.prompt }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloudnua-scan-result
+          path: .cloudnua/scan-result.json

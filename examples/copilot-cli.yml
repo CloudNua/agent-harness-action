@@ -1,0 +1,20 @@
+name: Copilot CLI with CloudNua Scanning
+
+on:
+  workflow_dispatch:
+
+jobs:
+  agent-run:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cloudnua/agent-harness-action@v1
+        with:
+          api-token: ${{ secrets.CLOUDNUA_API_TOKEN }}
+          agent-command: "copilot-cli suggest --target package.json"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

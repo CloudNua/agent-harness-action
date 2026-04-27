@@ -1,0 +1,27 @@
+name: Agent Run (Warn Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "Agent command to run"
+        required: true
+        type: string
+
+jobs:
+  agent-run:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cloudnua/agent-harness-action@v1
+        with:
+          api-token: ${{ secrets.CLOUDNUA_API_TOKEN }}
+          agent-command: "$AGENT_COMMAND"
+          fail-on-violation: "false"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENT_COMMAND: ${{ inputs.command }}
