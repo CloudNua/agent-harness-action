@@ -12,6 +12,12 @@ runStep("Pre-execution", async () => {
   const apiToken = core.getInput("api-token", { required: true });
   core.setSecret(apiToken);
 
+  // Mask the CF Access service-token client secret if provided
+  const cfAccessClientSecret = core.getInput("cf-access-client-secret");
+  if (cfAccessClientSecret) {
+    core.setSecret(cfAccessClientSecret);
+  }
+
   // Snapshot workspace — write to temp file to avoid state size limits
   const snapshot = await snapshotWorkspace();
   const snapshotPath = join(

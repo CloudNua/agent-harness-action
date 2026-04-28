@@ -258,4 +258,164 @@ describe("CloudNuaClient", () => {
       ).rejects.toThrow("Malformed evaluation response");
     });
   });
+
+  describe("Cloudflare Access service-token headers", () => {
+    it("attaches CF-Access-Client-Id and CF-Access-Client-Secret when both are set", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MOCK_POLICIES),
+      });
+
+      const client = new CloudNuaClient(
+        "cn_live_test123",
+        "https://app-uat.cloudnua.com",
+        {
+          retry: { baseDelayMs: 1 },
+          cfAccessClientId: "abc123.access",
+          cfAccessClientSecret: "supersecret",
+        },
+      );
+      await client.fetchPolicies();
+
+      const headers = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+      expect(headers["CF-Access-Client-Id"]).toBe("abc123.access");
+      expect(headers["CF-Access-Client-Secret"]).toBe("supersecret");
+      expect(headers["Authorization"]).toBe("Bearer cn_live_test123");
+    });
+
+    it("omits CF-Access headers when neither input is set", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MOCK_POLICIES),
+      });
+
+      const client = new CloudNuaClient(
+        "cn_live_test123",
+        "https://app.cloudnua.com",
+        { retry: { baseDelayMs: 1 } },
+      );
+      await client.fetchPolicies();
+
+      const headers = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+      expect(headers["CF-Access-Client-Id"]).toBeUndefined();
+      expect(headers["CF-Access-Client-Secret"]).toBeUndefined();
+    });
+
+    it("warns and treats as unset when only client-id is provided", async () => {
+      const core = await import("@actions/core");
+      const warningSpy = vi.spyOn(core, "warning");
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MOCK_POLICIES),
+      });
+
+      const client = new CloudNuaClient(
+        "cn_live_test123",
+        "https://app.cloudnua.com",
+        {
+          retry: { baseDelayMs: 1 },
+          cfAccessClientId: "abc123.access",
+        },
+      );
+      await client.fetchPolicies();
+
+      const headers = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+      expect(headers["CF-Access-Client-Id"]).toBeUndefined();
+      expect(headers["CF-Access-Client-Secret"]).toBeUndefined();
+      expect(warningSpy).toHaveBeenCalledWith(
+        expect.stringContaining("must be set together"),
+      );
+    });
+
+    it("warns and treats as unset when only client-secret is provided", async () => {
+      const core = await import("@actions/core");
+      const warningSpy = vi.spyOn(core, "warning");
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MOCK_POLICIES),
+      });
+
+      const client = new CloudNuaClient(
+        "cn_live_test123",
+        "https://app.cloudnua.com",
+        {
+          retry: { baseDelayMs: 1 },
+          cfAccessClientSecret: "supersecret",
+        },
+      );
+      await client.fetchPolicies();
+
+      const headers = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+      expect(headers["CF-Access-Client-Id"]).toBeUndefined();
+      expect(headers["CF-Access-Client-Secret"]).toBeUndefined();
+      expect(warningSpy).toHaveBeenCalledWith(
+        expect.stringContaining("must be set together"),
+      );
+    });
+
+    it("treats whitespace-only credentials as unset", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MOCK_POLICIES),
+      });
+
+      const client = new CloudNuaClient(
+        "cn_live_test123",
+        "https://app.cloudnua.com",
+        {
+          retry: { baseDelayMs: 1 },
+          cfAccessClientId: "   ",
+          cfAccessClientSecret: "   ",
+        },
+      );
+      await client.fetchPolicies();
+
+      const headers = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+      expect(headers["CF-Access-Client-Id"]).toBeUndefined();
+      expect(headers["CF-Access-Client-Secret"]).toBeUndefined();
+    });
+
+    it("does not log the client secret in messages", async () => {
+      const core = await import("@actions/core");
+      const warningSpy = vi.spyOn(core, "warning");
+      const debugSpy = vi.spyOn(core, "debug");
+      const infoSpy = vi.spyOn(core, "info");
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MOCK_POLICIES),
+      });
+
+      const SECRET = "topsecret-do-not-leak-XYZ123";
+      const client = new CloudNuaClient(
+        "cn_live_test123",
+        "https://app.cloudnua.com",
+        {
+          retry: { baseDelayMs: 1 },
+          cfAccessClientId: "abc123.access",
+          cfAccessClientSecret: SECRET,
+        },
+      );
+      await client.fetchPolicies();
+
+      const allLogs = [
+        ...warningSpy.mock.calls,
+        ...debugSpy.mock.calls,
+        ...infoSpy.mock.calls,
+      ]
+        .flat()
+        .filter((arg) => typeof arg === "string");
+      for (const msg of allLogs) {
+        expect(msg).not.toContain(SECRET);
+      }
+    });
+  });
 });

@@ -42,6 +42,14 @@ describe("action.yml", () => {
 
     expect(inputs["github-token"]).toBeDefined();
     expect(inputs["github-token"].required).toBe(false);
+
+    expect(inputs["cf-access-client-id"]).toBeDefined();
+    expect(inputs["cf-access-client-id"].required).toBe(false);
+    expect(inputs["cf-access-client-id"].default).toBeUndefined();
+
+    expect(inputs["cf-access-client-secret"]).toBeDefined();
+    expect(inputs["cf-access-client-secret"].required).toBe(false);
+    expect(inputs["cf-access-client-secret"].default).toBeUndefined();
   });
 
   it("specifies node20 runtime with pre/main/post entry points", () => {

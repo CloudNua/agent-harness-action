@@ -24,15 +24,7 @@ A GitHub Action that wraps AI coding agents with pre/post policy scanning. Befor
 
 ## How It Works
 
-```
-Pre-step          Main step              Post-step
-┌─────────┐      ┌──────────────┐       ┌────────────────┐
-│ Fetch    │      │ Run agent    │       │ Diff workspace  │
-│ policies │ ──── │ command      │ ───── │ Scan manifests  │
-│ Snapshot │      │              │       │ Post Check Run  │
-│ workspace│      │              │       │ Write telemetry │
-└─────────┘      └──────────────┘       └────────────────┘
-```
+![Agent Harness Action](./public/images/agent-harness-hld.png)
 
 1. **Pre-step**: Fetches tenant policies from the CloudNua API, snapshots workspace file state.
 2. **Main step**: Executes the configured agent command.

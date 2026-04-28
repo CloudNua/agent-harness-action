@@ -14,12 +14,16 @@ const TIMEOUT_MS = 10_000;
 export interface ClientOptions {
   retry?: Partial<RetryOptions>;
   allowHttp?: boolean;
+  cfAccessClientId?: string;
+  cfAccessClientSecret?: string;
 }
 
 export class CloudNuaClient {
   private readonly token: string;
   private readonly baseUrl: string;
   private readonly retryOptions: Partial<RetryOptions>;
+  private readonly cfAccessClientId: string | null;
+  private readonly cfAccessClientSecret: string | null;
 
   constructor(token: string, baseUrl: string, options?: ClientOptions) {
     this.token = token;
@@ -29,6 +33,22 @@ export class CloudNuaClient {
     });
     this.baseUrl = validated!;
     this.retryOptions = options?.retry ?? {};
+
+    const id = options?.cfAccessClientId?.trim() || "";
+    const secret = options?.cfAccessClientSecret?.trim() || "";
+    if ((id && !secret) || (!id && secret)) {
+      logger.warning(
+        "cf-access-client-id and cf-access-client-secret must be set together; ignoring partial Cloudflare Access service-token credentials",
+      );
+      this.cfAccessClientId = null;
+      this.cfAccessClientSecret = null;
+    } else if (id && secret) {
+      this.cfAccessClientId = id;
+      this.cfAccessClientSecret = secret;
+    } else {
+      this.cfAccessClientId = null;
+      this.cfAccessClientSecret = null;
+    }
   }
 
   async fetchPolicies(): Promise<PolicyExportResponse> {
@@ -168,10 +188,15 @@ export class CloudNuaClient {
   }
 
   private headers(): Record<string, string> {
-    return {
+    const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
       "Content-Type": "application/json",
       "User-Agent": `cloudnua-agent-harness/${VERSION}`,
     };
+    if (this.cfAccessClientId && this.cfAccessClientSecret) {
+      headers["CF-Access-Client-Id"] = this.cfAccessClientId;
+      headers["CF-Access-Client-Secret"] = this.cfAccessClientSecret;
+    }
+    return headers;
   }
 }

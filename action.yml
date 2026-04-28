@@ -41,6 +41,21 @@ inputs:
     description: "GitHub token for creating Check Runs (needs checks:write permission)"
     required: false
     default: ${{ github.token }}
+  cf-access-client-id:
+    description: >
+      Cloudflare Access service-token client ID. Required only when api-url is
+      behind a Cloudflare Access service-token policy. Sent as the
+      CF-Access-Client-Id header on every CloudNua API request. Must be set
+      together with cf-access-client-secret; setting only one is treated as
+      unset and a warning is emitted.
+    required: false
+  cf-access-client-secret:
+    description: >
+      Cloudflare Access service-token client secret. Required only when api-url
+      is behind a Cloudflare Access service-token policy. Sent as the
+      CF-Access-Client-Secret header on every CloudNua API request. Treat as a
+      secret — pass via repository secrets, not workflow YAML.
+    required: false
 
 runs:
   using: "node20"

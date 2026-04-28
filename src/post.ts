@@ -57,7 +57,16 @@ runStep("Post-execution", async () => {
   core.setSecret(apiToken);
   const apiUrl = core.getInput("api-url") || "https://app.cloudnua.com";
   const allowHttp = core.getInput("allow-http") === "true";
-  const client = new CloudNuaClient(apiToken, apiUrl, { allowHttp });
+  const cfAccessClientId = core.getInput("cf-access-client-id");
+  const cfAccessClientSecret = core.getInput("cf-access-client-secret");
+  if (cfAccessClientSecret) {
+    core.setSecret(cfAccessClientSecret);
+  }
+  const client = new CloudNuaClient(apiToken, apiUrl, {
+    allowHttp,
+    cfAccessClientId,
+    cfAccessClientSecret,
+  });
 
   const workspaceDir = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const result = await scanChanges(changes, workspaceDir, client);
