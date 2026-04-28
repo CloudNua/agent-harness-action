@@ -17,10 +17,12 @@ export interface ChangedFile {
  */
 export async function snapshotWorkspace(): Promise<FileSnapshot> {
   const files: Record<string, string> = {};
+  const workspaceDir = process.env.GITHUB_WORKSPACE || process.cwd();
 
   // Get tracked files with their hashes
   let trackedOutput = "";
   await exec.exec("git", ["ls-files", "--stage"], {
+    cwd: workspaceDir,
     silent: true,
     listeners: {
       stdout: (data) => {
@@ -41,6 +43,7 @@ export async function snapshotWorkspace(): Promise<FileSnapshot> {
   // Get untracked files
   let untrackedOutput = "";
   await exec.exec("git", ["ls-files", "--others", "--exclude-standard"], {
+    cwd: workspaceDir,
     silent: true,
     listeners: {
       stdout: (data) => {
