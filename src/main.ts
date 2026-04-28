@@ -1,5 +1,8 @@
 import * as core from "@actions/core";
 import * as exec from "@actions/exec";
+import { writeFileSync } from "fs";
+import { join } from "path";
+import { snapshotWorkspace } from "./utils/workspace";
 import { logger } from "./utils/logger";
 import { runStep } from "./utils/run";
 import { validateFirewallUrl } from "./utils/firewall";
@@ -13,6 +16,17 @@ runStep("Agent execution", async () => {
   if (!agentCommand.trim()) {
     throw new Error("agent-command input must not be empty");
   }
+
+  // Snapshot workspace before agent runs. Done in main (not pre) because
+  // pre: hooks fire before the consumer's actions/checkout main: completes —
+  // the workspace would have no .git directory yet.
+  const snapshot = await snapshotWorkspace();
+  const snapshotPath = join(
+    process.env.RUNNER_TEMP ?? "/tmp",
+    "cloudnua-snapshot.json",
+  );
+  writeFileSync(snapshotPath, JSON.stringify(snapshot));
+  core.saveState("workspace-snapshot-path", snapshotPath);
 
   // Validate and resolve firewall-url if provided
   const firewallUrlInput = core.getInput("firewall-url");
