@@ -3,7 +3,12 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      # Only immutable semver tags create releases. Floating aliases like
+      # `v1` (which we move forward as the action's stable major-version
+      # pointer) must NOT trigger this workflow — the v1 release already
+      # exists from the v1.0.0 cut, so re-creating it 422s.
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
 
 jobs:
   release:
