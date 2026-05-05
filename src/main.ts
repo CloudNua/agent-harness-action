@@ -6,15 +6,31 @@ import { snapshotWorkspace } from "./utils/workspace";
 import { logger } from "./utils/logger";
 import { runStep } from "./utils/run";
 import { validateFirewallUrl } from "./utils/firewall";
-import { STATE_FIREWALL_URL, STATE_AGENT_EXIT_CODE } from "./utils/constants";
+import {
+  STATE_FIREWALL_URL,
+  STATE_AGENT_EXIT_CODE,
+  STATE_SCAN_ONLY,
+} from "./utils/constants";
 
-runStep("Agent execution", async () => {
+export async function runMainStep(): Promise<void> {
   logger.info("Agent execution step starting");
 
-  const agentCommand = core.getInput("agent-command", { required: true });
+  const agentCommand = core.getInput("agent-command");
 
   if (!agentCommand.trim()) {
-    throw new Error("agent-command input must not be empty");
+    logger.info(
+      "scan-only mode (no agent-command provided); skipping agent execution",
+    );
+    // Surface scan-only mode in the workflow run summary so a typo in
+    // agent-command (silently empty) doesn't look identical to an executed
+    // agent run. Notices are visible without expanding the step logs.
+    core.notice(
+      "CloudNua scan-only mode: agent-command not provided. Workspace will be scanned but no agent will be executed.",
+      { title: "Scan-only mode" },
+    );
+    core.saveState(STATE_SCAN_ONLY, "true");
+    core.saveState(STATE_AGENT_EXIT_CODE, "0");
+    return;
   }
 
   // Snapshot workspace before agent runs. Done in main (not pre) because
@@ -76,4 +92,10 @@ runStep("Agent execution", async () => {
   }
 
   logger.info("Agent execution step complete");
-});
+}
+
+// Skip auto-run when imported as a module (e.g., from unit tests).
+// ncc bundles this as the entry, so require.main === module at runtime.
+if (require.main === module) {
+  runStep("Agent execution", runMainStep);
+}

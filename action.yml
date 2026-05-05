@@ -15,8 +15,8 @@ inputs:
     required: false
     default: "https://app.cloudnua.com"
   agent-command:
-    description: "The agent command to execute (e.g., 'copilot-cli suggest')"
-    required: true
+    description: "The agent command to execute (e.g., 'copilot-cli suggest'). Omit for scan-only mode (pre-scan + post-scan only, no agent execution)."
+    required: false
   policy-types:
     description: "Comma-separated policy types to enforce: dependency, mcp, compliance. Currently advisory — policy filtering is performed server-side."
     required: false

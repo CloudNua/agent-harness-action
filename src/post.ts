@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { snapshotWorkspace, diffSnapshots } from "./utils/workspace";
 import { scanChanges } from "./scanner";
 import { parseWorkspaceManifests } from "./scanner/manifests";
+import type { ManifestResult } from "./scanner/manifests";
 import {
   matchPackageIntelligence,
   deduplicateViolations,
@@ -12,36 +13,66 @@ import { buildTelemetry, writeTelemetryFile } from "./reporting/telemetry";
 import { logger } from "./utils/logger";
 import { runStep } from "./utils/run";
 import { CloudNuaClient } from "./api/client";
-import { STATE_FIREWALL_URL, STATE_AGENT_EXIT_CODE } from "./utils/constants";
-import type { FileSnapshot } from "./utils/workspace";
+import {
+  STATE_FIREWALL_URL,
+  STATE_AGENT_EXIT_CODE,
+  STATE_SCAN_ONLY,
+} from "./utils/constants";
+import type { FileSnapshot, ChangedFile } from "./utils/workspace";
 
-runStep("Post-execution", async () => {
+export async function runPostStep(): Promise<void> {
   logger.info("Post-execution step starting");
 
-  // 1. Load saved state from pre step
-  const snapshotPath = core.getState("workspace-snapshot-path");
+  const workspaceDir = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const scanOnly = core.getState(STATE_SCAN_ONLY) === "true";
+  let changes: ChangedFile[];
+  // In scan-only mode we parse the workspace once here and reuse the result
+  // for both the scan call (preParsed) and package-intelligence matching.
+  // In agent-wrap mode this stays undefined; scanChanges parses changed files
+  // itself, and the pkg-intel branch below parses on demand.
+  let preParsedManifests: ManifestResult[] | undefined;
 
-  if (!snapshotPath) {
-    logger.warning("No saved state from pre step — skipping post-execution scan");
-    return;
-  }
+  if (scanOnly) {
+    // Scan-only mode: no pre-snapshot was taken in main. Walk the workspace
+    // for manifest files and treat each as "added" so the existing scan path
+    // evaluates them server-side.
+    logger.info("Scan-only mode: walking workspace for manifest files");
+    preParsedManifests = parseWorkspaceManifests(workspaceDir);
+    changes = preParsedManifests.map((m) => ({
+      path: m.filePath,
+      status: "added" as const,
+    }));
+    if (changes.length === 0) {
+      logger.info("No manifest files found in workspace — nothing to scan");
+      return;
+    }
+    logger.info(`${changes.length} manifest file(s) to scan`);
+  } else {
+    // 1. Load saved state from pre step
+    const snapshotPath = core.getState("workspace-snapshot-path");
 
-  const beforeSnapshot: FileSnapshot = JSON.parse(
-    readFileSync(snapshotPath, "utf-8"),
-  );
+    if (!snapshotPath) {
+      logger.warning("No saved state from pre step — skipping post-execution scan");
+      return;
+    }
 
-  // 2. Take post-execution snapshot and diff
-  const afterSnapshot = await snapshotWorkspace();
-  const changes = diffSnapshots(beforeSnapshot, afterSnapshot);
+    const beforeSnapshot: FileSnapshot = JSON.parse(
+      readFileSync(snapshotPath, "utf-8"),
+    );
 
-  if (changes.length === 0) {
-    logger.info("No file changes detected — nothing to scan");
-    return;
-  }
+    // 2. Take post-execution snapshot and diff
+    const afterSnapshot = await snapshotWorkspace();
+    changes = diffSnapshots(beforeSnapshot, afterSnapshot);
 
-  logger.info(`${changes.length} files changed by agent`);
-  for (const change of changes) {
-    core.debug(`  ${change.status}: ${change.path}`);
+    if (changes.length === 0) {
+      logger.info("No file changes detected — nothing to scan");
+      return;
+    }
+
+    logger.info(`${changes.length} files changed by agent`);
+    for (const change of changes) {
+      core.debug(`  ${change.status}: ${change.path}`);
+    }
   }
 
   // 3. Warn if deprecated policy-types input is set
@@ -68,13 +99,18 @@ runStep("Post-execution", async () => {
     cfAccessClientSecret,
   });
 
-  const workspaceDir = process.env.GITHUB_WORKSPACE ?? process.cwd();
-  const result = await scanChanges(changes, workspaceDir, client);
+  const result = await scanChanges(
+    changes,
+    workspaceDir,
+    client,
+    preParsedManifests,
+  );
 
   // 4b. Package intelligence matching (client-side, Pro tier only)
   try {
     const packageIntelligence = await client.fetchPackageIntelligence();
-    const manifests = parseWorkspaceManifests(workspaceDir);
+    // Reuse manifests parsed for scan-only above; otherwise walk now.
+    const manifests = preParsedManifests ?? parseWorkspaceManifests(workspaceDir);
     const allDeps = manifests.flatMap((m) => m.dependencies);
     const pkgIntelMatches = matchPackageIntelligence(
       allDeps,
@@ -151,4 +187,8 @@ runStep("Post-execution", async () => {
   }
 
   logger.info("Post-execution step complete");
-});
+}
+
+if (require.main === module) {
+  runStep("Post-execution", runPostStep);
+}

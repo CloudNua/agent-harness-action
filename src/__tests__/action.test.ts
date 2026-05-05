@@ -22,7 +22,8 @@ describe("action.yml", () => {
     expect(inputs["api-token"].required).toBe(true);
 
     expect(inputs["agent-command"]).toBeDefined();
-    expect(inputs["agent-command"].required).toBe(true);
+    // Optional since v1.1.0: omitting it puts the action in scan-only mode.
+    expect(inputs["agent-command"].required).toBe(false);
 
     expect(inputs["api-url"]).toBeDefined();
     expect(inputs["api-url"].default).toBe("https://app.cloudnua.com");

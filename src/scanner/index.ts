@@ -4,6 +4,7 @@ import { CloudNuaClient } from "@/api/client";
 import type { EvaluateManifest } from "@/types/policy";
 import type { ChangedFile } from "@/utils/workspace";
 import type { EvaluationViolation } from "@/types/policy";
+import type { ManifestResult } from "./manifests";
 
 export type { ManifestResult, ParsedDependency } from "./manifests";
 
@@ -52,13 +53,18 @@ export function emptyScanResult(): ScanResult {
  *
  * Policies are resolved server-side by the CloudNua control plane — the client
  * sends only the manifest.
+ *
+ * `preParsed` lets callers (e.g. scan-only mode in post.ts) hand in manifests
+ * already parsed by `parseWorkspaceManifests`, avoiding a second filesystem
+ * walk + parse pass.
  */
 export async function scanChanges(
   changedFiles: ChangedFile[],
   workspaceDir: string,
   client: CloudNuaClient,
+  preParsed?: ManifestResult[],
 ): Promise<ScanResult> {
-  const manifests = parseChangedManifests(changedFiles, workspaceDir);
+  const manifests = preParsed ?? parseChangedManifests(changedFiles, workspaceDir);
 
   if (manifests.length === 0) {
     logger.info("No manifest files among changed files — no policy violations");
