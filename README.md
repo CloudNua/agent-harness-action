@@ -63,7 +63,7 @@ To get a `CLOUDNUA_API_TOKEN`, sign in at [app.cloudnua.com](https://app.cloudnu
 | --- | --- | --- | --- |
 | `api-token` | Yes | | CloudNua API token (generate in **Settings → API Keys**). |
 | `api-url` | No | `https://app.cloudnua.com` | CloudNua API base URL. Override only for self-hosted or staging deployments. |
-| `agent-command` | Yes | | Shell command to execute the AI agent. |
+| `agent-command` | No | | Shell command to execute the AI agent. Omit for **scan-only mode** — the action runs the pre-scan and post-scan against the existing workspace without executing an agent. |
 | `policy-types` | No | `all` | Comma-separated policy types to enforce: `dependency`, `mcp`, `compliance`. Currently advisory — policy filtering is performed server-side. |
 | `firewall-url` | No | | URL of the CloudNua MCP firewall gateway. When set, the harness exposes `CLOUDNUA_FIREWALL_URL` to the agent subprocess; the agent is responsible for routing MCP traffic through it. |
 | `allow-http` | No | `"false"` | Allow non-TLS URLs for `api-url` and `firewall-url`. Intended for local development and testing only — never enable in production. |
@@ -154,6 +154,34 @@ Self-contained workflow files for common agents are in [`examples/`](./examples)
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+### Scan-only mode
+
+Omit `agent-command` to run the pre-scan and post-scan against the existing workspace without executing any agent. The action fetches policies, snapshots the workspace, then scans whatever manifest files are already in the checkout.
+
+```yaml
+name: Policy Scan
+
+on:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cloudnua/agent-harness-action@v1
+        with:
+          api-token: ${{ secrets.CLOUDNUA_API_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+This is the mode the [CloudNua GitHub App](https://app.cloudnua.com) auto-injects when it adds a managed `.github/workflows/cloudnua.yml` to your repository — no agent runtime is required to start enforcing policies on PRs.
 
 ### Warn-Only Mode
 

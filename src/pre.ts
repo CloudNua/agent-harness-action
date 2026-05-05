@@ -2,6 +2,10 @@ import * as core from "@actions/core";
 import { logger } from "./utils/logger";
 import { runStep } from "./utils/run";
 
+// Contributor note: if logic here grows beyond ~20 lines or branches on inputs,
+// refactor to `export async function runPreStep()` + `require.main === module`
+// guard, matching main.ts / post.ts so it can be unit-tested. The current body
+// is small enough that an inline IIFE-style call is acceptable.
 runStep("Pre-execution", async () => {
   logger.info("Pre-execution step starting");
 
